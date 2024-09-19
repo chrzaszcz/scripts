@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+#set -euo pipefail
+
+if [ $# -lt 2 ]
+then
+cat << HELP
+
+docker-sync-repo [SRC_REPO] [DST_REPO] --  copy all Docker images from SRC_REPO to DST_REPO
+
+Only images with the same digest in both repos are skipped.
+
+EXAMPLE:
+    - copy images from mongooseim/mongooseim to erlangsolutions/mongooseim:
+       docker-sync-repo mongooseim/mongooseim erlangsolutions/mongooseim
+
+HELP
+fi
+
+read_tags() {
+    local -n tag_array=$1
+    while IFS=$'\t' read -r tag digest
+    do
+        tag_array["$tag"]="$digest"
+    done < <(docker-tags $2)
+}
+
+SRC_REPO=$1
+DST_REPO=$2
+
+declare -A src_tags dst_tags
+read_tags "src_tags" $SRC_REPO
+read_tags "dst_tags" $DST_REPO
+
+for tag in "${!src_tags[@]}"; do
+    if [[ -v dst_tags[$tag] && ${dst_tags[$tag]} == ${src_tags[$tag]} ]]; then
+        echo "Tag $tag already present with digest ${src_tags[$tag]}"
+    else
+        echo "Pushing tag $tag, digest ${src_tags[$tag]}"
+        docker buildx imagetools create -t $DST_REPO:$tag $SRC_REPO:$tag
+    fi
+done
